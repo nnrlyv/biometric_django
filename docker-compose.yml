@@ -1,0 +1,29 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+
+
+  prometheus:
+      image: prom/prometheus  #готовый докер образ
+      container_name: prometheus
+      ports:
+        - "9090:9090" #port on my pc/ port inside of container
+      volumes: # юзать этот конфиг вместо стандарт
+        - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      depends_on:
+        - web
+
+
+  grafana:
+    image: grafana/grafana #ready образ from docker hub
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
