@@ -1,126 +1,158 @@
+from django.http import HttpResponse
 from ninja import NinjaAPI, Schema
 from typing import List
 from .models import Restaurant, Chef, Pizza, Ingredient, Review
 from django.shortcuts import get_object_or_404
-
+from ninja.errors import Http404
 api = NinjaAPI(title="Алмұрт-ата")
 
-class RestaurantSchema(Schema):
-    id: int = None
+
+class RestaurantIn(Schema):
     name: str
     address: str
 
-class ChefSchema(Schema):
-    id: int = None
+class RestaurantOut(Schema):
+    id: int
+    name: str
+    address: str
+
+
+class ChefIn(Schema):
     name: str
     restaurant: int
 
-class IngredientSchema(Schema):
-    id: int = None
+class ChefOut(Schema):
+    id: int
+    name: str
+    restaurant:int
+
+
+class IngredientIn(Schema):
     name: str
 
-class PizzaSchema(Schema):
-    id: int = None
+class IngredientOut(Schema):
+    id: int
+    name: str
+
+
+class PizzaIn(Schema):
     name: str
     cheese_type: str
     dough_thickness: str
     secret_ingredient: str
     restaurant: int
-    ingredients: List[int] = []
+    ingredients: List[int]
 
-class ReviewSchema(Schema):
-    id: int = None
+class PizzaOut(Schema):
+    id: int
+    name: str
+    cheese_type: str
+    dough_thickness: str
+    secret_ingredient: str
+    restaurant: int
+    ingredients: List[str]
+
+
+class ReviewIn(Schema):
+    restaurant: int
+    rating: int
+    text: str
+
+class ReviewOut(Schema):
+    id: int
     restaurant: int
     rating: int
     text: str
 
 
-@api.get("/restaurants/", response=List[RestaurantSchema], tags=["Restaurants"])
+@api.get("/restaurants/", response=List[RestaurantOut], tags=["Restaurants"])
 def list_restaurants(request):
-    return [RestaurantSchema(id=r.id, name=r.name, address=r.address) for r in Restaurant.objects.all()]
+    return Restaurant.objects.all()
 
-@api.post("/restaurants/", response=RestaurantSchema, tags=["Restaurants"])
-def create_restaurant(request, payload: RestaurantSchema):
-    r = Restaurant.objects.create(name=payload.name, address=payload.address)
-    return RestaurantSchema(id=r.id, name=r.name, address=r.address)
-
-# Menu endpoint
-@api.get("/restaurants/{restaurant_id}/menu/", tags=["Menu"])
-def restaurant_menu(request, restaurant_id: int):
-    restaurant = get_object_or_404(Restaurant, id=restaurant_id)
-    pizzas = []
-    for p in restaurant.pizzas.all():
-        pizzas.append(PizzaSchema(
-            id=p.id,
-            name=p.name,
-            cheese_type=p.cheese_type,
-            dough_thickness=p.dough_thickness,
-            secret_ingredient=p.secret_ingredient,
-            restaurant=p.restaurant.id,
-            ingredients=[i.id for i in p.ingredients.all()]
-        ))
-    return {"restaurant": restaurant.name, "menu": pizzas}
+@api.post("/restaurants/", tags=["Restaurants"])
+def create_restaurant(request, payload: RestaurantIn):
+    restaurant = Restaurant.objects.create(name=payload.name, address=payload.address)
+    return RestaurantOut(id=restaurant.id, name=restaurant.name, address=restaurant.address)
 
 
-@api.get("/chefs/", response=List[ChefSchema], tags=["Chefs"])
+@api.get("/chefs/", response=List[ChefOut], tags=["Chefs"])
 def list_chefs(request):
-    return [ChefSchema(id=c.id, name=c.name, restaurant=c.restaurant.id) for c in Chef.objects.all()]
+    chefs = Chef.objects.all()
+    return [
+            {
+                "id": chef.id,
+                "name": chef.name,
+                "restaurant": chef.restaurant_id
+            }
+            for chef in chefs
+        ]
 
-@api.post("/chefs/", response=ChefSchema, tags=["Chefs"])
-def create_chef(request, payload: ChefSchema):
+@api.post("/chefs/",tags=["Chefs"])
+def create_chef(request, payload: ChefIn):
     restaurant_obj = get_object_or_404(Restaurant, id=payload.restaurant)
     if hasattr(restaurant_obj, "chef"):
         return {"error": "This restaurant already has a chef."}
-    c = Chef.objects.create(name=payload.name, restaurant=restaurant_obj)
-    return ChefSchema(id=c.id, name=c.name, restaurant=c.restaurant.id)
+    chef = Chef.objects.create(name=payload.name, restaurant=restaurant_obj)
+    return ChefOut(id=chef.id, name=chef.name, restaurant=chef.restaurant_id)
 
 
 
-@api.post("/ingredients/", response=IngredientSchema, tags=["Ingredients"])
-def create_ingredient(request, payload: IngredientSchema):
+@api.post("/ingredients/", response=IngredientIn, tags=["Ingredients"])
+def create_ingredient(request, payload: IngredientIn):
     i = Ingredient.objects.create(name=payload.name)
-    return IngredientSchema(id=i.id, name=i.name)
+    return IngredientOut(id=i.id, name=i.name)
 
 
-@api.get("/pizzas/", response=List[PizzaSchema], tags=["Pizzas"])
+@api.get("/ingredients/", response= List[IngredientOut], tags=["Ingredients"])
+def list_ingredients(request):
+    ingredients = Ingredient.objects.all()
+    return ingredients
+
+
+@api.get("/pizzas/", response=List[PizzaOut], tags=["Pizzas"])
 def list_pizzas(request):
     pizzas = Pizza.objects.all()
     result = []
     for p in pizzas:
-        result.append(PizzaSchema(
-            id=p.id,
+        result.append(PizzaOut(
+            id= p.id,
             name=p.name,
             cheese_type=p.cheese_type,
             dough_thickness=p.dough_thickness,
             secret_ingredient=p.secret_ingredient,
             restaurant=p.restaurant.id,
-            ingredients=[i.id for i in p.ingredients.all()]
+            ingredients= [i.name for i in p.ingredients.all()]
         ))
     return result
 
-@api.post("/pizzas/", response=PizzaSchema, tags=["Pizzas"])
-def create_pizza(request, payload: PizzaSchema):
+
+
+@api.post("/pizzas/", tags=["Pizzas"])
+def create_pizza(request, payload: PizzaIn):
     restaurant_obj = get_object_or_404(Restaurant, id=payload.restaurant)
-    p = Pizza.objects.create(
+    pizza = Pizza.objects.create(
         name=payload.name,
         cheese_type=payload.cheese_type,
         dough_thickness=payload.dough_thickness,
         secret_ingredient=payload.secret_ingredient,
         restaurant=restaurant_obj
     )
-    p.ingredients.set(payload.ingredients)
-    return PizzaSchema(
-        id=p.id,
-        name=p.name,
-        cheese_type=p.cheese_type,
-        dough_thickness=p.dough_thickness,
-        secret_ingredient=p.secret_ingredient,
-        restaurant=p.restaurant.id,
-        ingredients=[i.id for i in p.ingredients.all()]
+
+    pizza.ingredients.set(payload.ingredients)
+
+    return PizzaOut(
+        id=pizza.id,
+        name=pizza.name,
+        cheese_type=pizza.cheese_type,
+        dough_thickness=pizza.dough_thickness,
+        secret_ingredient=pizza.secret_ingredient,
+        restaurant=pizza.restaurant.id,
+        ingredients= [i.name for i in pizza.ingredients.all()]
+
     )
 
-@api.put("/pizzas/{pizza_id}/", response=PizzaSchema, tags=["Pizzas"])
-def update_pizza(request, pizza_id: int, payload: PizzaSchema):
+@api.put("/pizzas/{pizza_id}/", response=PizzaIn, tags=["Pizzas"])
+def update_pizza(request, pizza_id: int, payload: PizzaIn):
     pizza = get_object_or_404(Pizza, id=pizza_id)
     restaurant_obj = get_object_or_404(Restaurant, id=payload.restaurant)
     pizza.name = payload.name
@@ -136,30 +168,56 @@ def update_pizza(request, pizza_id: int, payload: PizzaSchema):
 def delete_pizza(request, pizza_id: int):
     pizza = get_object_or_404(Pizza, id=pizza_id)
     pizza.delete()
-    return {"success": True}
+    return {"success": "Your pizza was deleted"}
 
 
-@api.get("/reviews/", response=List[ReviewSchema], tags=["Reviews"])
+@api.get("/reviews/", response=List[ReviewOut], tags=["Reviews"])
 def list_reviews(request):
     reviews = Review.objects.all()
-    return [ReviewSchema(
+    return [ReviewOut(
         id=r.id,
         restaurant=r.restaurant.id,
         rating=r.rating,
         text=r.text
     ) for r in reviews]
 
-@api.post("/reviews/", response=ReviewSchema, tags=["Reviews"])
-def create_review(request, payload: ReviewSchema):
+@api.post("/reviews/",tags=["Reviews"])
+def create_review(request, payload: ReviewIn):
+    if payload.rating > 5:
+        return  HttpResponse("Rating cannot be more than 5", status = 404)
+
     restaurant_obj = get_object_or_404(Restaurant, id=payload.restaurant)
     r = Review.objects.create(
         restaurant=restaurant_obj,
         rating=payload.rating,
         text=payload.text
     )
-    return ReviewSchema(
-        id=r.id,
+
+
+    return ReviewIn(
         restaurant=r.restaurant.id,
         rating=r.rating,
         text=r.text
     )
+
+
+@api.get("/restaurants/{restaurant_id}/menu/", tags=["Menu"])
+def restaurant_menu(request, restaurant_id: int):
+    try:
+        restaurant = Restaurant.objects.get(id=restaurant_id)
+    except Restaurant.DoesNotExist:
+        return {"msg": "Restaurant not found"}
+
+    pizzas = []
+    for p in restaurant.pizzas.all():
+        pizzas.append(PizzaOut(
+            id=p.id,
+            name=p.name,
+            cheese_type=p.cheese_type,
+            dough_thickness=p.dough_thickness,
+            secret_ingredient=p.secret_ingredient,
+            restaurant=p.restaurant.id,
+            ingredients = [ing.name for ing in p.ingredients.all()]
+
+        ))
+    return {"restaurant": restaurant.name, "menu": pizzas}
